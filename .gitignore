@@ -61,8 +61,10 @@ config.ini
 credentials.json
 secrets.yaml
 
+
 .venv/
 outputTest/
 directoryTest/
+directoryTest2/
 directoryTest_out/
 samples/

@@ -4,11 +4,12 @@ import os
 from pathlib import Path
 import concurrent.futures
 import time
+import re
 
 def html_to_pdf(html_path, pdf_path=None):
     """
-    Convert HTML file to PDF with all collapsible sections expanded.
-    Optimized for better performance.
+    Convert HTML file to PDF with all hidden content expanded.
+    Handles collapsible sections, checkboxes, and hidden divs.
     """
     # If pdf_path is not specified, use the same name with .pdf extension
     if pdf_path is None:
@@ -23,32 +24,75 @@ def html_to_pdf(html_path, pdf_path=None):
         with open(html_path, 'r', encoding='latin-1') as f:
             html_content = f.read()
     
-    # Create CSS for expanding content (more efficient than inline styling)
+    # Create comprehensive CSS for expanding all hidden content
     expand_css = CSS(string="""
+        /* Show all collapsible content */
         .content { display: block !important; }
         .collapsible:after { content: "\\26C5" !important; }
+        
+        /* Show any elements with display:none */
+        [style*="display: none"],
+        [style*="display:none"] { display: block !important; }
+        
+        /* Check all checkboxes */
+        input[type="checkbox"] { 
+            -webkit-appearance: checkbox !important;
+            -moz-appearance: checkbox !important;
+            appearance: checkbox !important;
+            opacity: 1 !important;
+            display: inline-block !important;
+            margin: 2px !important;
+            position: static !important;
+            visibility: visible !important;
+            box-sizing: border-box !important;
+        }
+        
+        /* Show any hidden content by ID */
+        #hid { display: block !important; }
     """)
     
     # Convert modified HTML to PDF with optimized settings
     try:
         start_time = time.time()
         
-        # Only modify HTML content if necessary
-        if ".content" in html_content and "display: none" in html_content:
-            # Insert right before </head> if it exists, otherwise use as is
-            if "</head>" in html_content:
-                modified_html = html_content.replace("</head>", """<style>.content{display:block !important;}</style></head>""")
-            else:
-                modified_html = """<style>.content{display:block !important;}</style>""" + html_content
-            
-            # Use the optimized HTML
-            html_obj = HTML(string=modified_html)
+        # Apply comprehensive modifications to HTML
+        modified_html = html_content
+        
+        # 1. Replace display:none with display:block in style attributes
+        modified_html = re.sub(r'style=(["\'])([^"\']*?)display:\s*none([^"\']*?)(\1)', 
+                              r'style=\1\2display:block\3\1', modified_html)
+        
+        # 2. Add show-hidden-content CSS to head or create a head if not present
+        css_injection = """<style>
+        .content { display: block !important; }
+        #hid, [style*="display: none"], [style*="display:none"] { display: block !important; }
+        input[type="checkbox"] { checked: checked; }
+        </style>"""
+        
+        if "</head>" in modified_html:
+            modified_html = modified_html.replace("</head>", f"{css_injection}</head>")
+        elif "<html" in modified_html:
+            modified_html = modified_html.replace("<html", f"<html><head>{css_injection}</head>")
         else:
-            # Skip HTML modification if not needed
-            html_obj = HTML(filename=html_path)
+            modified_html = f"<html><head>{css_injection}</head>{modified_html}</html>"
+        
+        # 3. Directly modify any script-hidden content to be visible
+        modified_html = modified_html.replace('id="hid" style="display:none"', 'id="hid" style="display:block"')
+        
+        # 4. Check all checkboxes
+        modified_html = re.sub(r'<input type=["\']checkbox["\']', 
+                             r'<input type="checkbox" checked="checked"', 
+                             modified_html)
+        
+        # Use the optimized HTML
+        html_obj = HTML(string=modified_html)
         
         # Apply the CSS and render with optimized settings
-        html_obj.write_pdf(pdf_path, stylesheets=[expand_css])
+        html_obj.write_pdf(
+            pdf_path, 
+            stylesheets=[expand_css],
+            presentational_hints=True
+        )
         
         end_time = time.time()
         print(f"Converted {html_path} to {pdf_path} in {end_time - start_time:.2f} seconds")
@@ -114,7 +158,7 @@ def batch_convert_html_to_pdf(input_dir='.', output_dir=None, workers=None):
 # Example usage
 if __name__ == "__main__":
     # For single file conversion:
-    #html_to_pdf('test3.html', 'output_complex.pdf')
+    html_to_pdf('test3.html', 'output_complex.pdf')
     
     # For batch conversion with parallel processing:
-    batch_convert_html_to_pdf('directoryTest','outputTest',workers=4)
+    # batch_convert_html_to_pdf('directoryTest','outputTest', workers=4)
